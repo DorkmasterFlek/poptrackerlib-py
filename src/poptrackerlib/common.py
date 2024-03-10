@@ -11,7 +11,11 @@ class PopTrackerEncoder(json.JSONEncoder):
         # Define generic dunder JSON function to use for JSON encoding.
         if hasattr(obj, '__json__'):
             return obj.__json__()
-        return json.JSONEncoder.default(self, obj)
+        # Fall back to attribute dict for regular objects.
+        elif hasattr(obj, '__dict__'):
+            return obj.__dict__
+        # Otherwise fall back to the default JSON encoder.
+        return super().default(obj)
 
 
 def dumps(obj, **kwargs):
