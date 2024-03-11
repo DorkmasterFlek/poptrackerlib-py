@@ -16,14 +16,15 @@ from github import Github
 logger = logging.getLogger(f'poptrackerlib.release')
 
 
-def create_release(version, note, prerelease=False, repo_dir=None):
+def create_release(version, note, prerelease=False, repo_dir=None, treeish='main'):
     """Create a new release on GitHub.  This should be called from a repository script.
 
     Args:
         version (str): The version number of the release.
-        note (str): The release notes.
+        note (str|list): The release notes.
         prerelease (bool): Whether the release is a pre-release.
         repo_dir (str): The directory of the repository.  If not provided, current directory is used.
+        treeish (str): The commit/branch to use for the release.  Default is 'main'.
 
     Returns:
         Release: The new release object.
@@ -50,11 +51,28 @@ def create_release(version, note, prerelease=False, repo_dir=None):
 
     remote_path = repo.remotes.origin.url
     remote_path = remote_path.rsplit(':')[-1]
-    remote_path = '/'.join(remote_path.rsplit('/', 2)[1:])
+    remote_path = '/'.join(remote_path.rsplit('/', 2)[-2:])
     if remote_path.endswith('.git'):
         remote_path = remote_path[:-4]
 
     repo_name = remote_path.rsplit('/', 1)[-1]
+
+    # Get remote repository.
+    g = Github(token)
+    try:
+        remote_repo = g.get_repo(remote_path)
+    except Exception as e:
+        logger.error(f'Error getting remote repository {remote_path!r}: {e}')
+        raise
+
+    # Read current versions and check if version already exists.
+    versions_file = os.path.join(repo_dir, 'versions.json')
+    with open(versions_file) as f:
+        versions = json.load(f)
+
+    existing = {v['package_version'] for v in versions['versions']}
+    if version in existing:
+        raise ValueError(f'Version {version} already exists in versions.json')
 
     # Make sure manifest version matches the release version.  If not, update it and commit to be in the ZIP.
     manifest_file = os.path.join(repo_dir, 'manifest.json')
@@ -92,15 +110,11 @@ def create_release(version, note, prerelease=False, repo_dir=None):
     with open(output_file, 'rb') as f:
         sha256 = hashlib.file_digest(f, 'sha256').hexdigest()
 
-    # Read current versions and create new entry from release notes.
-    versions_file = os.path.join(repo_dir, 'versions.json')
-    with open(versions_file) as f:
-        versions = json.load(f)
+    # Use list of notes for versions JSON file, and convert to bullet points for GitHub release notes.
+    if isinstance(note, str):
+        note = [note]
 
-    existing = {v['package_version'] for v in versions['versions']}
-    if version in existing:
-        raise ValueError(f'Version {version} already exists in versions.json')
-
+    # Make new version entry.
     new_version = {
         'package_version': version,
         'download_url': '',  # Placeholder for field order.
@@ -112,9 +126,8 @@ def create_release(version, note, prerelease=False, repo_dir=None):
     # Use notes as bullet points in the release body.
     logger.info(f'Publishing release {version}')
 
-    g = Github(token)
-    remote_repo = g.get_repo(remote_path)
-    binsha = repo.commit('main').binsha
+    note = '\n'.join(f'- {n}' for n in note)
+    binsha = repo.commit(treeish).binsha
     release = remote_repo.create_git_tag_and_release(tag, tag, title, note, binsha.hex(), 'commit',
                                                      prerelease=prerelease)
     attachment = release.upload_asset(output_file, label=os.path.split(output_file)[1])
@@ -133,3 +146,32 @@ def create_release(version, note, prerelease=False, repo_dir=None):
 
     # Done.
     logger.info(f'Release {version} published')
+
+
+def run_make_release():
+    """Run the release script from the command line.  Call this from your repository to make a new release."""
+
+    import argparse
+
+    # Log to stdout.
+    handler = logging.StreamHandler()
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+    parser = argparse.ArgumentParser(description='Build a release and publish it to GitHub.')
+
+    parser.add_argument('--repo', default=os.getcwd(),
+                        help='The directory of the repository.  If not provided, current directory is used.')
+
+    parser.add_argument('--prerelease', action='store_true', help='Mark the release as a pre-release.')
+
+    parser.add_argument('version', help='The version number of the release.')
+
+    parser.add_argument('note', nargs='+', help='The release notes.')
+
+    args = parser.parse_args()
+
+    try:
+        create_release(args.version, args.note, args.prerelease, args.repo)
+    except ValueError as e:
+        parser.error(str(e))
