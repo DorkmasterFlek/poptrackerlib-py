@@ -3,6 +3,8 @@
 
 # Location-based classes and functions.
 
+import json
+
 
 class Map:
     def __init__(self, name, scale=1, offset=0):
@@ -230,3 +232,71 @@ class Section:
         if self.hosted_item:
             obj['hosted_item'] = self.hosted_item
         return obj
+
+
+def import_locations_from_file(file_path):
+    """Imports locations from a JSON file.
+
+    Args:
+        file_path (str): The path to the JSON file.
+
+    Returns:
+        list[Location]: The imported locations.
+    """
+
+    locations = []
+
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+
+    # Filter out comment lines (even though JSON doesn't technically support that).
+    lines = [line for line in lines if not line.strip().startswith('//')]
+    data = json.loads(''.join(lines))
+
+    for d in data:
+        locations.append(_handle_location_data(d))
+
+    return locations
+
+
+def _handle_location_data(data):
+    """Handles location data recursively.
+
+    Args:
+        data (dict): The location data.
+
+    Returns:
+        Area|Location: The new area or location object.
+    """
+
+    # If we have children, this is an Area object.
+    if 'children' in data:
+        location = Area(data['name'])
+        for c in data['children']:
+            location.children.append(_handle_location_data(c))
+
+    # Otherwise, it's a single location.
+    else:
+        location = Location(data['name'])
+
+        if data.get('sections'):
+            for s in data['sections']:
+                location.sections.append(
+                    Section(s['name'], clear_as_group=s.get('clear_as_group', False),
+                            chest_unopened_img=s.get('chest_unopened_img'), chest_opened_img=s.get('chest_opened_img'),
+                            item_count=s.get('item_count'), hosted_item=s.get('hosted_item'),
+                            access_rules=s.get('access_rules'), visibility_rules=s.get('visibility_rules'),
+                            location_id=s.get('location_id')))
+
+        if data.get('map_locations'):
+            for m in data['map_locations']:
+                location.map_locations.append(
+                    MapLocation(Map(m['map']), m['x'], m['y'], size=m.get('size'),
+                                border_thickness=m.get('border_thickness'),
+                                restrict_visibility_rules=m.get('restrict_visibility_rules'),
+                                force_invisibility_rules=m.get('force_invisibility_rules')))
+
+    if data.get('access_rules'):
+        location.access_rules = data['access_rules']
+
+    return location
