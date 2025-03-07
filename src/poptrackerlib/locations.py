@@ -140,13 +140,14 @@ class Area:
 
 
 class Location:
-    def __init__(self, name, access_rules=None, chest_unopened_img=None, chest_opened_img=None, map_locations=None,
-                 sections=None):
+    def __init__(self, name, access_rules=None, visibility_rules=None, chest_unopened_img=None, chest_opened_img=None,
+                 map_locations=None, sections=None):
         """Initializes a new Location object.
 
         Args:
             name (str): The name of the location.
-            access_rules (list): A list of access rules for the location.
+            access_rules (list[str]): A list of access rules for the location.
+            visibility_rules (list[str]): A list of visibility rules for the location.
             chest_unopened_img (str): The image to use for unopened chests in the location.
             chest_opened_img (str): The image to use for opened chests in the location.
             map_locations (list[MapLocation]): A list of map locations for the location.
@@ -154,6 +155,7 @@ class Location:
         """
         self.name = name
         self.access_rules = access_rules or []
+        self.visibility_rules = visibility_rules or []
         self.chest_unopened_img = chest_unopened_img
         self.chest_opened_img = chest_opened_img
         self.map_locations = map_locations or []
@@ -165,6 +167,8 @@ class Location:
         }
         if self.access_rules:
             obj['access_rules'] = self.access_rules
+        if self.visibility_rules:
+            obj['visibility_rules'] = self.visibility_rules
         if self.chest_unopened_img:
             obj['chest_unopened_img'] = self.chest_unopened_img
         if self.chest_opened_img:
