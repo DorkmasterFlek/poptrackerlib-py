@@ -12,6 +12,7 @@ import subprocess
 
 from git import Repo
 from github import Github
+import semver
 
 logger = logging.getLogger(f'poptrackerlib.release')
 
@@ -33,8 +34,20 @@ def create_release(version, note, prerelease=False, repo_dir=None, treeish='main
     if repo_dir is None:
         repo_dir = os.getcwd()
 
-    if not re.match(r'^\d+(\.\d+)+$', version):
-        raise ValueError('Invalid version number.')
+    # Get manifest for current package version.
+    manifest_file = os.path.join(repo_dir, 'manifest.json')
+    with open(manifest_file) as f:
+        manifest = json.load(f)
+
+    curver = semver.parse_version_info(manifest['package_version'])
+
+    # Try to parse the provided version.  If that fails, see if it's a next version part.
+    try:
+        newver = semver.parse_version_info(version)
+    except ValueError:
+        newver = curver.next_version(version)
+
+    version = str(newver)
 
     tag = title = 'v' + version
 
@@ -75,10 +88,6 @@ def create_release(version, note, prerelease=False, repo_dir=None, treeish='main
         raise ValueError(f'Version {version} already exists in versions.json')
 
     # Make sure manifest version matches the release version.  If not, update it and commit to be in the ZIP.
-    manifest_file = os.path.join(repo_dir, 'manifest.json')
-    with open(manifest_file) as f:
-        manifest = json.load(f)
-
     if manifest['package_version'] != version:
         logger.info(f'Updating manifest.json version to {version}')
         manifest['package_version'] = version
